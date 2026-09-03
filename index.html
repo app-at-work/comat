@@ -1158,9 +1158,9 @@
         <tbody>
           <tr><td>Ver Dashboard</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
           <tr><td>Aprovisionamento (ver / importar / editar itens)</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
-          <tr><td>Separação (tratativa, liberar/retornar)</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td></tr>
-          <tr><td>Preparação (tratativa, preparar)</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>Entrega (registrar entrega)</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>Separação (tratativa, liberar/retornar)</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td></tr>
+          <tr><td>Preparação (tratativa, preparar)</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>Entrega (registrar entrega)</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
           <tr><td>Usuários (gerenciar perfis)</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
         </tbody>
       </table>
@@ -1250,7 +1250,7 @@
         <div class="field"><label>Status</label><label class="inline-check"><input id="userEditAtivo" type="checkbox" /> Usuário ativo</label></div>
       </div>
       <div class="perm-note">
-        Perfis: <b>Aprovisionador</b> importa/edita itens no Aprovisionamento; <b>Separador</b> faz a Separação e libera para a Preparação; <b>Preparador</b> faz a Preparação e registra a Entrega; <b>Usuário</b> realiza a retirada; <b>Adm</b> gerencia usuários. Todos acessam o Dashboard.
+        Perfis: <b>Aprovisionador</b> importa/edita itens no Aprovisionamento e também acessa a Separação e a Preparação; <b>Separador</b> faz a Separação e libera para a Preparação; <b>Preparador</b> faz a Preparação e registra a Entrega; <b>Usuário</b> realiza a retirada; <b>Adm</b> gerencia usuários. Todos acessam o Dashboard.
       </div>
     </div>
     <div class="modal-foot">
@@ -1639,8 +1639,8 @@ let currentUserProfile=null;
 function getUserRole(){return currentUserProfile?.perfil || currentUserProfile?.Perfil || 'Usuário';}
 function isAdm(){return getUserRole()==='Adm';}
 function canAprovisionar(){return isAdm() || getUserRole()==='Aprovisionador';}
-function canSeparar(){return isAdm() || getUserRole()==='Separador';}
-function canPreparar(){return isAdm() || getUserRole()==='Preparador';}
+function canSeparar(){const p=getUserRole();return isAdm() || p==='Separador' || p==='Aprovisionador';}
+function canPreparar(){const p=getUserRole();return isAdm() || p==='Preparador' || p==='Aprovisionador';}
 function canAccessView(view){
   if(view==='dash') return true;
   if(view==='users') return isAdm();
