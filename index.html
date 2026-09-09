@@ -872,6 +872,10 @@
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M8 15l3-4 3 3 4-6"/></svg>
       <span class="lbl">DashBoard</span>
     </button>
+    <button class="side-item" data-view="share" style="display:none">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+      <span class="lbl">Compartilhamento</span>
+    </button>
     <button class="side-item" data-view="users" style="display:none">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       <span class="lbl">Usuários</span>
@@ -922,6 +926,10 @@
     <button class="btn primary" id="importBtn">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
       Importar Excel
+    </button>
+    <button class="btn ghost" id="lotesBtn" type="button" title="Lotes de importação · exclusão coletiva">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4-9-4Z"/><path d="M3 12l9 4 9-4"/><path d="M3 17l9 4 9-4"/></svg>
+      Lotes
     </button>
   </div>
 
@@ -1167,6 +1175,112 @@
     </div>
   </div>
 </main>
+
+<main id="view-share" style="display:none">
+  <div class="users-head">
+    <div>
+      <h2>Compartilhamento de carteira</h2>
+      <p>Na tela de <b>Aprovisionamento</b> cada aprovisionador visualiza somente os itens que ele mesmo importou. Use esta tela para compartilhar a sua carteira com outro aprovisionador em casos de <b>férias, afastamento, folga ou cobertura de turno</b>. Quem receber o compartilhamento passa a enxergar e tratar os seus itens enquanto o compartilhamento estiver ativo.</p>
+    </div>
+    <div class="users-tools">
+      <button class="btn ghost" id="reloadSharesBtn">↻ Recarregar</button>
+      <button class="btn primary" id="addShareBtn">+ Compartilhar carteira</button>
+    </div>
+  </div>
+  <div class="users-table-wrap">
+    <div class="perm-matrix-head"><h3>Carteiras que eu compartilhei</h3><small>Aprovisionadores que enxergam os itens importados por mim.</small></div>
+    <table class="users-table">
+      <thead><tr><th>Compartilhada com</th><th>Email</th><th>Período</th><th>Motivo</th><th>Status</th><th style="text-align:right">Ações</th></tr></thead>
+      <tbody id="sharesOutRows"></tbody>
+    </table>
+    <div id="sharesOutEmpty" class="empty" style="display:none">Você ainda não compartilhou sua carteira com ninguém.</div>
+  </div>
+  <div class="users-table-wrap">
+    <div class="perm-matrix-head"><h3>Carteiras compartilhadas comigo</h3><small>Itens de outros aprovisionadores que aparecem no meu Aprovisionamento.</small></div>
+    <table class="users-table">
+      <thead><tr><th>Dono da carteira</th><th>Email</th><th>Período</th><th>Motivo</th><th>Status</th><th style="text-align:right">Itens visíveis</th></tr></thead>
+      <tbody id="sharesInRows"></tbody>
+    </table>
+    <div id="sharesInEmpty" class="empty" style="display:none">Nenhuma carteira foi compartilhada com você.</div>
+  </div>
+</main>
+
+<!-- Modal Compartilhar carteira -->
+<div class="overlay" id="shareEditOverlay">
+  <div class="modal user-edit-modal">
+    <div class="modal-head">
+      <div><h3 id="shareEditTitle">Compartilhar carteira</h3><small style="color:var(--muted);font-weight:600">Selecione o aprovisionador que assumirá a sua carteira</small></div>
+      <button class="btn ghost icon" onclick="closeShareEditModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="user-edit-grid">
+        <div class="field full">
+          <label>Aprovisionador</label>
+          <div class="user-dropdown" id="shareUserDropdown">
+            <button type="button" class="user-dropdown-toggle" id="shareUserToggle" onclick="toggleShareDropdown()">
+              <span id="shareUserSelectedText">Selecione um aprovisionador</span>
+              <span class="user-dropdown-arrow">▾</span>
+            </button>
+            <div class="user-dropdown-panel" id="shareUserPanel">
+              <input id="shareUserSearch" class="user-dropdown-search" type="text" placeholder="Buscar por nome ou email..." autocomplete="off" />
+              <div class="user-options" id="shareUserOptions"></div>
+            </div>
+          </div>
+        </div>
+        <div class="field"><label>Início (opcional)</label><input id="shareDataInicio" type="date" /></div>
+        <div class="field"><label>Fim (opcional)</label><input id="shareDataFim" type="date" /></div>
+        <div class="field full"><label>Motivo</label><input id="shareMotivo" type="text" placeholder="Ex.: Férias de 10/10 a 30/10" /></div>
+        <div class="field full"><label class="inline-check"><input id="shareAtivo" type="checkbox" checked /> Compartilhamento ativo</label></div>
+      </div>
+      <div class="perm-note">O compartilhamento é <b>somente de visualização e tratativa</b> dos itens: o dono original da carteira continua registrado em cada item importado. Desative ou exclua o compartilhamento ao retornar das férias.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn danger" id="deleteShareBtn" style="display:none">Excluir</button>
+      <button class="btn ghost" onclick="closeShareEditModal()">Cancelar</button>
+      <button class="btn primary" id="saveShareBtn">Salvar compartilhamento</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Lotes de importação -->
+<div class="overlay" id="lotesOverlay">
+  <div class="modal log-modal">
+    <div class="modal-head">
+      <div><h3>Lotes de importação</h3><small style="color:var(--muted);font-weight:600">Cada importação coletiva recebe um código de lote e pode ser excluída de uma só vez</small></div>
+      <button class="btn ghost icon" onclick="closeLotes()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="search" style="min-width:260px;margin-bottom:12px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5f7a77" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="loteSearch" placeholder="Buscar por código do lote, responsável ou data..." />
+      </div>
+      <div class="users-table-wrap" style="box-shadow:none">
+        <table class="users-table">
+          <thead><tr><th>Código do lote</th><th>Importado em</th><th>Responsável</th><th>Itens</th><th>Entregues</th><th style="text-align:right">Ações</th></tr></thead>
+          <tbody id="lotesRows"></tbody>
+        </table>
+        <div id="lotesEmpty" class="empty" style="display:none">Nenhum lote de importação encontrado na sua carteira.</div>
+      </div>
+      <div class="perm-note">A exclusão coletiva remove <b>todos os itens do lote</b> que ainda estão na sua carteira. Itens já entregues são preservados e não são excluídos.</div>
+    </div>
+    <div class="modal-foot"><button class="btn ghost" onclick="closeLotes()">Fechar</button></div>
+  </div>
+</div>
+
+<!-- Confirmação de exclusão coletiva do lote -->
+<div class="overlay" id="loteDelOverlay">
+  <div class="modal confirm">
+    <div class="modal-body">
+      <div class="warn"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></div>
+      <h3>Excluir lote inteiro?</h3>
+      <p id="loteDelText">Esta ação não poderá ser desfeita.</p>
+    </div>
+    <div class="modal-foot" style="justify-content:center">
+      <button class="btn ghost" onclick="closeLoteDel()">Cancelar</button>
+      <button class="btn danger" id="loteDelBtn" onclick="doDeleteLote()">Excluir lote</button>
+    </div>
+  </div>
+</div>
 
 <main id="view-tutorial" style="display:none">
   <div class="users-head">
@@ -1539,6 +1653,7 @@ const DELIVERY_TABLE_NAME = 'ft_entregas';         // cada confirmação de entr
 const DELIVERY_ITEMS_TABLE_NAME = 'ft_entrega_itens'; // itens vinculados a cada entrega
 const USER_TABLE_NAME = 'dim_usuarios';
 const TUTORIAL_TABLE_NAME = 'dim_tutoriais';
+const SHARE_TABLE_NAME = 'dim_carteira_compartilhamento'; // compartilhamento de carteira entre aprovisionadores
 const TUTORIAL_BUCKET = 'tutoriais';                    // bucket do Supabase Storage com os videos de treinamento
 const TUTORIAL_MAX_MB = 300;                            // tamanho maximo permitido por video           // vídeos de treinamento exibidos no botão Tutorial (login)              // tabela de usuários e perfis do COMAT
 const USER_PROFILES = ['Usuário','Aprovisionador','Separador','Preparador','Adm'];
@@ -1585,15 +1700,15 @@ const FIELDS = [
   { key:'Data_Parada',        label:'Data Parada',       type:'date',     full:false },
   { key:'Mina',               label:'Mina',              type:'select',   full:false, options:MINAS },
   { key:'Frota',              label:'Frota',             type:'select',   full:false, options:FROTAS },
-  { key:'Equipamento',        label:'Equipamento',       type:'text',     full:false },
+  { key:'Equipamento',        label:'Equipamento',       type:'text',     full:false, filterType:'select' },
   { key:'Ordem',              label:'Ordem',             type:'text',     full:false },
   { key:'Reserva',            label:'Reserva',           type:'text',     full:false },
   { key:'Solicitacao',        label:'Solicitação',       type:'text',     full:false },
   { key:'Descricao_Material', label:'Descrição Material',type:'text',     full:true  },
   { key:'PN',                 label:'PN',                type:'text',     full:false },
   { key:'Quantidade',         label:'Quantidade',        type:'number',   full:false },
-  { key:'Centro',             label:'Centro',            type:'text',     full:false },
-  { key:'Local_Entrega',      label:'Local de Entrega',  type:'text',     full:false },
+  { key:'Centro',             label:'Centro',            type:'text',     full:false, filterType:'select' },
+  { key:'Local_Entrega',      label:'Local de Entrega',  type:'text',     full:false, filterType:'select' },
   { key:'Observação',         label:'Observação',        type:'textarea', full:true  },
   { key:'Status_SAP',         label:'Status SAP',        type:'select',   full:false, options:[] },
 ];
@@ -1643,6 +1758,7 @@ function canSeparar(){const p=getUserRole();return isAdm() || p==='Separador' ||
 function canPreparar(){const p=getUserRole();return isAdm() || p==='Preparador' || p==='Aprovisionador';}
 function canAccessView(view){
   if(view==='dash') return true;
+  if(view==='share') return canAprovisionar();
   if(view==='users') return isAdm();
   if(view==='tutorial') return isAdm();
   if(view==='aprov') return canAprovisionar();
@@ -1658,6 +1774,7 @@ function applyPermissions(){
   const imp=$('importBtn'); if(imp) imp.style.display=canAprovisionar()?'inline-flex':'none';
   const filter=$('filterBtn'); if(filter) filter.style.display=canAprovisionar()?'inline-flex':'none';
   const copyOrders=$('copyTableOrdersBtn'); if(copyOrders) copyOrders.style.display=canAprovisionar()?'inline-flex':'none';
+  const lotes=$('lotesBtn'); if(lotes) lotes.style.display=canAprovisionar()?'inline-flex':'none';
   const current=[...document.querySelectorAll('main[id^="view-"]')].find(m=>m.style.display!=='none')?.id?.replace('view-','');
   if(current && !canAccessView(current)) switchView('dash');
 }
@@ -1819,7 +1936,9 @@ async function marcarStatusSapEntregue(id,checkbox){
 
 function render(){
   const q = $('search').value.trim().toLowerCase();
-  let filtered = data;
+  /* CARTEIRA: cada aprovisionador ve somente os itens que ele importou
+     (+ carteiras compartilhadas com ele). Adm ve tudo. */
+  let filtered = data.filter(itemVisivelAprov);
   // busca global
   if(q) filtered = filtered.filter(r=>FIELDS.some(f=>String(r[f.key]??'').toLowerCase().includes(q)) || String(r.Status_SAP??'').toLowerCase().includes(q) || String(fmtSemana(r)||'').toLowerCase().includes(q));
   // filtros por coluna (modal)
@@ -2006,7 +2125,7 @@ function buildFilterForm(){
           <span class="range-sep">até</span>
           <input id="flt_Data_Parada_ate" type="date" value="${esc(ate)}" />
         </div>`;
-    }else if(f.type==='select'){
+    }else if(f.type==='select' || f.filterType==='select'){
       // multi-select moderno: campo mostra tags/placeholder; a busca fica dentro do menu
       wrap.innerHTML=`<label>${f.label}</label>
         <div class="ms" id="ms_${f.key}">
@@ -2025,6 +2144,7 @@ function buildFilterForm(){
         </div>`;
       g.appendChild(wrap);
       if(f.key==='Status_SAP') f.options=statusSapFilterOptions();
+      else if(f.filterType==='select') f.options=distinctFieldOptions(f.key); // lista suspensa dinamica (Equipamento, Centro, Local de Entrega)
       initMultiSelect(f, toArray(filters[f.key]));
       continue;
     }else{
@@ -2106,7 +2226,7 @@ function applyFilters(){
       if(ate) filters['Data_Parada_ate']=ate;
       continue;
     }
-    if(f.type==='select'){
+    if(f.type==='select' || f.filterType==='select'){
       const arr=[...(msSelected[f.key]||[])];
       if(arr.length) filters[f.key]=arr;
       continue;
@@ -3439,17 +3559,19 @@ async function confirmImport(){
   $('prog').style.display='block';
   try{
     const CHUNK=200; let done=0, ok=0;
+    const loteCodigo=gerarCodigoLote();   // codigo unico do lote -> permite exclusao coletiva
+    const loteData=new Date().toISOString();
     for(let i=0;i<importRows.length;i+=CHUNK){
       const batch=importRows.slice(i,i+CHUNK);
       const u=getCurrentUserAudit();
-      const rowsToInsert=batch.map(r=>withDefaultsForNewItem({...r,usuario_importacao_id:u.id,usuario_importacao_nome:u.nome,usuario_importacao_email:u.email,data_importacao:new Date().toISOString()}));
+      const rowsToInsert=batch.map(r=>withDefaultsForNewItem({...r,lote_importacao:loteCodigo,usuario_importacao_id:u.id,usuario_importacao_nome:u.nome,usuario_importacao_email:u.email,data_importacao:loteData}));
       const {error}=await comatInsert(TABLE_NAME,rowsToInsert.map(r=>({...r,operacao_offline_id:r.operacao_offline_id||comatUuid()})));
       if(error) throw error;
       ok+=batch.length; done+=batch.length;
       $('progBar').style.width=Math.round(done/importRows.length*100)+'%';
     }
-    await logAction('IMPORTAR_ITENS','Aprovisionamento',{quantidade:ok});
-    toast(`${ok} registro(s) importado(s) ✔`);
+    await logAction('IMPORTAR_ITENS','Aprovisionamento',{quantidade:ok,lote_importacao:loteCodigo});
+    toast(`${ok} registro(s) importado(s) no lote ${loteCodigo} ✔`);
     closeImport(); await load();
   }catch(e){ $('importSummary').innerHTML='<span class="bad">Erro ao importar: '+esc(e.message)+'</span>'; toast('Erro ao importar: '+e.message,true); console.error(e); }
   finally{ btn.innerHTML=old; btn.disabled=false; opRelease('confirmImport'); }
@@ -4590,11 +4712,12 @@ function renderDash(){
 
 /* ====== RENDER SOMENTE DA TELA ATIVA ====== */
 function renderActiveView(){
-  const active=['aprov','sep','prep','dash','users','tutorial'].find(v=>{const el=document.getElementById('view-'+v);return el&&el.style.display!=='none';})||'aprov';
+  const active=['aprov','sep','prep','dash','share','users','tutorial'].find(v=>{const el=document.getElementById('view-'+v);return el&&el.style.display!=='none';})||'aprov';
   if(active==='aprov') render();
   else if(active==='sep') renderSep();
   else if(active==='prep') renderPrep();
   else if(active==='dash') renderDash();
+  else if(active==='share') renderShares();
   else if(active==='users') renderUsers();
   else if(active==='tutorial') renderTutorialAdmin();
 }
@@ -5022,10 +5145,10 @@ let _rz; window.addEventListener('resize',()=>{ clearTimeout(_rz); _rz=setTimeou
 /* ====== MENU LATERAL / NAVEGAÇÃO ENTRE TELAS ====== */
 // Reusa o mesmo logo do header no sidebar (sem duplicar o base64)
 (function(){ const l=document.querySelector('header .logo'); if(l) $('sideLogo').src=l.src; })();
-const VIEW_TITLES={ aprov:'Aprovisionamento', sep:'Separação', prep:'Preparação', dash:'DashBoard', users:'Usuários', tutorial:'Tutorial' };
+const VIEW_TITLES={ aprov:'Aprovisionamento', sep:'Separação', prep:'Preparação', dash:'DashBoard', share:'Compartilhamento', users:'Usuários', tutorial:'Tutorial' };
 function switchView(view){
   if(!canAccessView(view)){ toast('Você não tem permissão para acessar esta tela.', true); view='dash'; }
-  ['aprov','sep','prep','dash','users','tutorial'].forEach(v=>{
+  ['aprov','sep','prep','dash','share','users','tutorial'].forEach(v=>{
     const el=$('view-'+v); if(el) el.style.display = (v===view)?'':'none';
   });
   document.querySelectorAll('.side-item').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
@@ -5035,6 +5158,7 @@ function switchView(view){
   if(view==='sep') renderSep();
   if(view==='prep') renderPrep();
   if(view==='dash') renderDash();
+  if(view==='share') loadShares(true);
   if(view==='users') loadUsers();
   if(view==='tutorial') loadTutorials(true);
 }
@@ -5050,6 +5174,284 @@ window.addEventListener('load', ()=>setTimeout(adjustLayout,60));
 setTimeout(adjustLayout, 200);
   if(navigator.onLine) sincronizarPendencias();
 
+
+/* ===================================================================
+   COMAT_CARTEIRA_MODULE · carteira por aprovisionador, compartilhamento
+   e lotes de importacao (exclusao coletiva)
+   =================================================================== */
+let sharesOut=[];              // carteiras que EU compartilhei
+let sharesIn=[];               // carteiras compartilhadas COMIGO
+let shareUsuarios=[];          // aprovisionadores disponiveis para compartilhar
+let shareSelectedUser=null;
+let editingShareId=null;
+let deletingLote=null;
+const SHARE_CACHE_KEY='comat_shares_cache';
+
+/* ---- Regras de visibilidade da carteira ---- */
+function shareVigente(s){
+  if(!s || s.ativo===false) return false;
+  const hoje=new Date().toISOString().split('T')[0];
+  if(s.data_inicio && hoje < String(s.data_inicio).split('T')[0]) return false;
+  if(s.data_fim && hoje > String(s.data_fim).split('T')[0]) return false;
+  return true;
+}
+function ownersVisiveis(){
+  const set=new Set();
+  if(currentUser?.id) set.add(String(currentUser.id));
+  (sharesIn||[]).forEach(s=>{ if(shareVigente(s) && s.owner_id) set.add(String(s.owner_id)); });
+  return set;
+}
+/* Item visivel no Aprovisionamento: importado por mim, por quem compartilhou
+   a carteira comigo, ou sem dono definido (base legada). Adm ve tudo. */
+function itemVisivelAprov(r){
+  if(!currentUser) return true;
+  if(isAdm()) return true;
+  const owner=r?.usuario_importacao_id;
+  if(!owner) return true;
+  return ownersVisiveis().has(String(owner));
+}
+/* Opcoes das listas suspensas dinamicas dos filtros (Equipamento, Centro, Local de Entrega) */
+function distinctFieldOptions(key){
+  const set=new Set();
+  data.filter(itemVisivelAprov).forEach(r=>{ const v=String(r?.[key]??'').trim(); if(v) set.add(v); });
+  return [...set].sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true,sensitivity:'base'}));
+}
+
+/* ---- Carregamento dos compartilhamentos ---- */
+async function loadShares(force=false){
+  if(!currentUser) return;
+  const cached=await comatCacheGet(SHARE_CACHE_KEY).catch(()=>null);
+  if(cached){ sharesOut=cached.out||[]; sharesIn=cached.in||[]; }
+  if(!navigator.onLine && !force){ renderShares(); return; }
+  try{
+    const {data:rows,error}=await sb.from(SHARE_TABLE_NAME).select('*')
+      .or(`owner_id.eq.${currentUser.id},destinatario_id.eq.${currentUser.id}`)
+      .order('criado_em',{ascending:false});
+    if(error) throw error;
+    sharesOut=(rows||[]).filter(s=>String(s.owner_id)===String(currentUser.id));
+    sharesIn=(rows||[]).filter(s=>String(s.destinatario_id)===String(currentUser.id));
+    try{ await comatCacheSet(SHARE_CACHE_KEY,{out:sharesOut,in:sharesIn}); }catch(_){}
+  }catch(e){ console.warn('Compartilhamentos indisponíveis:',e.message); }
+  renderShares();
+  try{ if($('view-aprov')?.style.display!=='none') render(); }catch(_){}
+}
+function shareStatusPill(s){
+  if(s.ativo===false) return '<span class="user-status inactive">Inativo</span>';
+  return shareVigente(s)?'<span class="user-status active">Ativo</span>':'<span class="user-status inactive">Fora do período</span>';
+}
+function sharePeriodo(s){
+  const i=s.data_inicio?fmtDate(s.data_inicio):'', f=s.data_fim?fmtDate(s.data_fim):'';
+  if(!i && !f) return 'Indeterminado';
+  return `${i||'—'} até ${f||'—'}`;
+}
+function renderShares(){
+  const out=$('sharesOutRows'), inn=$('sharesInRows');
+  if(out){
+    $('sharesOutEmpty').style.display=sharesOut.length?'none':'block';
+    out.innerHTML=sharesOut.map(s=>`<tr>
+      <td data-label="Compartilhada com">${esc(s.destinatario_nome||'—')}</td>
+      <td data-label="Email">${esc(s.destinatario_email||'—')}</td>
+      <td data-label="Período">${esc(sharePeriodo(s))}</td>
+      <td data-label="Motivo">${esc(s.motivo||'—')}</td>
+      <td data-label="Status">${shareStatusPill(s)}</td>
+      <td data-label="Ações"><button class="btn ghost" data-share-edit="${esc(s.id)}">Editar</button></td>
+    </tr>`).join('');
+  }
+  if(inn){
+    $('sharesInEmpty').style.display=sharesIn.length?'none':'block';
+    inn.innerHTML=sharesIn.map(s=>{
+      const n=data.filter(r=>String(r.usuario_importacao_id||'')===String(s.owner_id)).length;
+      return `<tr>
+        <td data-label="Dono da carteira">${esc(s.owner_nome||'—')}</td>
+        <td data-label="Email">${esc(s.owner_email||'—')}</td>
+        <td data-label="Período">${esc(sharePeriodo(s))}</td>
+        <td data-label="Motivo">${esc(s.motivo||'—')}</td>
+        <td data-label="Status">${shareStatusPill(s)}</td>
+        <td data-label="Itens visíveis">${shareVigente(s)?n:0}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+/* ---- Modal de compartilhamento ---- */
+async function loadShareUsuarios(){
+  try{
+    const {data:users,error}=await sb.from(USER_TABLE_NAME).select('id,nome,email,perfil,ativo').eq('ativo',true).order('nome',{ascending:true});
+    if(error) throw error;
+    shareUsuarios=(users||[]).filter(u=>String(u.id)!==String(currentUser?.id) && ['Aprovisionador','Adm'].includes(u.perfil||''));
+  }catch(e){ shareUsuarios=[]; toast('Não foi possível carregar a lista de aprovisionadores.',true); }
+}
+function toggleShareDropdown(force){
+  const dd=$('shareUserDropdown'); if(!dd) return;
+  const open=force===undefined?!dd.classList.contains('open'):!!force;
+  dd.classList.toggle('open',open);
+  if(open) setTimeout(()=>$('shareUserSearch')?.focus(),0);
+}
+function updateShareUserText(){
+  const el=$('shareUserSelectedText'); if(!el) return;
+  if(shareSelectedUser) el.innerHTML=`<span>${esc(shareSelectedUser.nome)}</span><small>${esc(shareSelectedUser.email)}</small>`;
+  else el.textContent='Selecione um aprovisionador';
+}
+function renderShareUserOptions(term=''){
+  const box=$('shareUserOptions'); if(!box) return;
+  const q=normalizeStr(term);
+  const list=shareUsuarios.filter(u=>normalizeStr([u.nome,u.email].join(' ')).includes(q));
+  box.innerHTML=list.length?list.map(u=>`<button type="button" class="user-option ${shareSelectedUser?.id===u.id?'active':''}" data-share-user-id="${esc(u.id)}"><span><b>${esc(u.nome)}</b><small>${esc(u.email)} · ${esc(u.perfil||'')}</small></span></button>`).join('')
+    :'<div class="empty" style="padding:10px">Nenhum aprovisionador encontrado.</div>';
+}
+async function openShareEditModal(id){
+  if(!ensurePermission('aprov')) return;
+  await loadShareUsuarios();
+  const s=sharesOut.find(x=>String(x.id)===String(id))||null;
+  editingShareId=s?s.id:null;
+  shareSelectedUser=s?{id:s.destinatario_id,nome:s.destinatario_nome,email:s.destinatario_email}:null;
+  $('shareEditTitle').textContent=s?'Editar compartilhamento':'Compartilhar carteira';
+  $('shareDataInicio').value=s?.data_inicio?String(s.data_inicio).split('T')[0]:'';
+  $('shareDataFim').value=s?.data_fim?String(s.data_fim).split('T')[0]:'';
+  $('shareMotivo').value=s?.motivo||'';
+  $('shareAtivo').checked=s?s.ativo!==false:true;
+  $('deleteShareBtn').style.display=s?'inline-flex':'none';
+  $('shareUserSearch').value='';
+  renderShareUserOptions(''); updateShareUserText(); toggleShareDropdown(false);
+  $('shareEditOverlay').classList.add('show');
+}
+function closeShareEditModal(){ $('shareEditOverlay')?.classList.remove('show'); editingShareId=null; shareSelectedUser=null; toggleShareDropdown(false); }
+async function saveShare(){
+  if(!ensurePermission('aprov')) return;
+  if(!shareSelectedUser){ toast('Selecione o aprovisionador que receberá a carteira.',true); toggleShareDropdown(true); return; }
+  const ini=$('shareDataInicio').value||null, fim=$('shareDataFim').value||null;
+  if(ini && fim && fim<ini){ toast('A data final não pode ser anterior à inicial.',true); return; }
+  if(!opLock('saveShare')) return;
+  const _b=opBusy($('saveShareBtn'),'Salvando...');
+  try{
+    const u=getCurrentUserAudit();
+    const payload={owner_id:u.id,owner_nome:u.nome,owner_email:u.email,
+      destinatario_id:shareSelectedUser.id,destinatario_nome:shareSelectedUser.nome,destinatario_email:shareSelectedUser.email,
+      motivo:$('shareMotivo').value.trim()||null,data_inicio:ini,data_fim:fim,ativo:$('shareAtivo').checked};
+    let error;
+    if(editingShareId){ ({error}=await sb.from(SHARE_TABLE_NAME).update(payload).eq('id',editingShareId)); }
+    else{ ({error}=await sb.from(SHARE_TABLE_NAME).insert(payload)); }
+    if(error) throw error;
+    await logAction(editingShareId?'EDITAR_COMPARTILHAMENTO_CARTEIRA':'COMPARTILHAR_CARTEIRA','Aprovisionamento',
+      {destinatario:payload.destinatario_nome,destinatario_email:payload.destinatario_email,motivo:payload.motivo,data_inicio:ini,data_fim:fim,ativo:payload.ativo});
+    toast('Compartilhamento salvo ✔');
+    closeShareEditModal();
+    await loadShares(true);
+  }catch(e){ toast('Erro ao salvar compartilhamento: '+e.message,true); console.error(e); }
+  finally{ opRelease('saveShare',_b); }
+}
+async function deleteShare(){
+  if(!ensurePermission('aprov')||!editingShareId) return;
+  if(!opLock('delShare')) return;
+  const _b=opBusy($('deleteShareBtn'),'Excluindo...');
+  try{
+    const {error}=await sb.from(SHARE_TABLE_NAME).delete().eq('id',editingShareId);
+    if(error) throw error;
+    await logAction('EXCLUIR_COMPARTILHAMENTO_CARTEIRA','Aprovisionamento',{id:editingShareId});
+    toast('Compartilhamento excluído ✔');
+    closeShareEditModal();
+    await loadShares(true);
+  }catch(e){ toast('Erro ao excluir compartilhamento: '+e.message,true); console.error(e); }
+  finally{ opRelease('delShare',_b); }
+}
+
+/* ---- Lotes de importacao (exclusao coletiva) ---- */
+function gerarCodigoLote(){
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  const rnd=Math.random().toString(36).slice(2,6).toUpperCase();
+  return `LOTE-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}-${rnd}`;
+}
+function getLotes(){
+  const map=new Map();
+  data.filter(itemVisivelAprov).forEach(r=>{
+    const cod=String(r.lote_importacao||'').trim()||'__SEM_LOTE__';
+    if(!map.has(cod)) map.set(cod,{codigo:cod,itens:[],data:r.data_importacao||null,responsavel:r.usuario_importacao_nome||r.usuario_importacao_email||'—',ownerId:r.usuario_importacao_id||null});
+    const g=map.get(cod); g.itens.push(r);
+    if(r.data_importacao && (!g.data || r.data_importacao<g.data)) g.data=r.data_importacao;
+  });
+  return [...map.values()].sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
+}
+function loteEntregues(g){ return g.itens.filter(itemTeveEntrega).length; }
+function renderLotes(){
+  const tb=$('lotesRows'); if(!tb) return;
+  const q=normalizeStr($('loteSearch')?.value||'');
+  const lotes=getLotes().filter(g=>!q||normalizeStr([g.codigo,g.responsavel,fmtDateTime(g.data)].join(' ')).includes(q));
+  $('lotesEmpty').style.display=lotes.length?'none':'block';
+  tb.innerHTML=lotes.map(g=>{
+    const semLote=g.codigo==='__SEM_LOTE__';
+    const ent=loteEntregues(g);
+    const podeExcluir=!semLote && (isAdm()||String(g.ownerId||'')===String(currentUser?.id||''));
+    return `<tr>
+      <td data-label="Código do lote"><b>${semLote?'Sem lote (importações anteriores)':esc(g.codigo)}</b></td>
+      <td data-label="Importado em">${esc(fmtDateTime(g.data))}</td>
+      <td data-label="Responsável">${esc(g.responsavel)}</td>
+      <td data-label="Itens">${g.itens.length}</td>
+      <td data-label="Entregues">${ent}</td>
+      <td data-label="Ações">${podeExcluir?`<button class="btn danger" data-lote-del="${esc(g.codigo)}">Excluir lote</button>`:'<span style="color:var(--muted)">—</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+function openLotes(){ if(!ensurePermission('aprov')) return; if($('loteSearch')) $('loteSearch').value=''; renderLotes(); $('lotesOverlay').classList.add('show'); }
+function closeLotes(){ $('lotesOverlay')?.classList.remove('show'); }
+function openLoteDel(codigo){
+  const g=getLotes().find(x=>x.codigo===codigo); if(!g) return;
+  const excluiveis=g.itens.filter(r=>!itemTeveEntrega(r));
+  if(!excluiveis.length){ toast('Todos os itens deste lote já possuem entrega e não podem ser excluídos.',true); return; }
+  deletingLote={codigo,ids:excluiveis.map(r=>r.id).filter(v=>v!=null),total:g.itens.length,preservados:g.itens.length-excluiveis.length};
+  $('loteDelText').innerHTML=`Serão excluídos <b>${excluiveis.length}</b> item(ns) do lote <b>${esc(codigo)}</b>.${deletingLote.preservados?`<br>${deletingLote.preservados} item(ns) já entregue(s) serão preservados.`:''}<br>Esta ação não poderá ser desfeita.`;
+  $('loteDelOverlay').classList.add('show');
+}
+function closeLoteDel(){ $('loteDelOverlay')?.classList.remove('show'); deletingLote=null; }
+async function doDeleteLote(){
+  if(!ensurePermission('aprov')||!deletingLote) return;
+  if(!opLock('delLote')) return;
+  const _b=opBusy($('loteDelBtn'),'Excluindo...');
+  const {codigo,ids}=deletingLote;
+  try{
+    if(navigator.onLine){
+      for(let i=0;i<ids.length;i+=200){
+        const {error}=await sb.from(TABLE_NAME).delete().in('id',ids.slice(i,i+200));
+        if(error) throw error;
+      }
+    }else{
+      for(const id of ids) await comatDelete(TABLE_NAME,{eq:{col:'id',value:id}});
+      toast('Sem conexão: exclusão do lote salva offline e será sincronizada ✔');
+    }
+    const setIds=new Set(ids.map(String));
+    data=data.filter(r=>!setIds.has(String(r.id)));
+    try{ await comatCacheSet(TABLE_NAME,data); }catch(_){}
+    await logAction('EXCLUIR_LOTE_IMPORTACAO','Aprovisionamento',{lote_importacao:codigo,quantidade:ids.length});
+    closeLoteDel(); comatRefreshAll(); renderLotes();
+    toast(`${ids.length} item(ns) do lote ${codigo} excluído(s) ✔`);
+  }catch(e){ toast('Erro ao excluir o lote: '+e.message,true); console.error(e); }
+  finally{ opRelease('delLote',_b); }
+}
+
+/* ---- Eventos ---- */
+$('reloadSharesBtn')?.addEventListener('click',()=>loadShares(true));
+$('addShareBtn')?.addEventListener('click',()=>openShareEditModal(null));
+$('sharesOutRows')?.addEventListener('click',e=>{const b=e.target.closest('[data-share-edit]'); if(b) openShareEditModal(b.dataset.shareEdit);});
+$('shareUserSearch')?.addEventListener('input',e=>renderShareUserOptions(e.target.value));
+$('shareUserOptions')?.addEventListener('click',e=>{const o=e.target.closest('[data-share-user-id]'); if(!o) return; shareSelectedUser=shareUsuarios.find(u=>String(u.id)===String(o.dataset.shareUserId))||null; updateShareUserText(); renderShareUserOptions($('shareUserSearch').value); toggleShareDropdown(false);});
+document.addEventListener('click',e=>{const dd=$('shareUserDropdown'); if(dd&&!dd.contains(e.target)) toggleShareDropdown(false);});
+$('saveShareBtn')?.addEventListener('click',saveShare);
+$('deleteShareBtn')?.addEventListener('click',deleteShare);
+$('shareEditOverlay')?.addEventListener('click',e=>{ if(e.target===e.currentTarget) closeShareEditModal(); });
+$('lotesBtn')?.addEventListener('click',openLotes);
+$('loteSearch')?.addEventListener('input',renderLotes);
+$('lotesRows')?.addEventListener('click',e=>{const b=e.target.closest('[data-lote-del]'); if(b) openLoteDel(b.dataset.loteDel);});
+$('lotesOverlay')?.addEventListener('click',e=>{ if(e.target===e.currentTarget) closeLotes(); });
+$('loteDelOverlay')?.addEventListener('click',e=>{ if(e.target===e.currentTarget) closeLoteDel(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeShareEditModal(); closeLotes(); closeLoteDel(); } });
+
+/* Carrega os compartilhamentos logo apos o login (estende applySession) */
+(function(){
+  const _apply=applySession;
+  applySession=async function(session){ await _apply(session); try{ await loadShares(true); }catch(_){} };
+  const _refresh=refreshAllInformation;
+  refreshAllInformation=async function(){ await _refresh(); try{ await loadShares(true); }catch(_){} };
+})();
+/* ===== /COMAT_CARTEIRA_MODULE ===== */
 
 /* ===== COMAT_BULK_MODULE_V2 · selecao coletiva de tratativa (Separacao/Preparacao) ===== */
 (function(){
