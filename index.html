@@ -3495,6 +3495,8 @@ async function saveEntrega(){
   }finally{
     // Libera a trava e restaura o botão (mesmo em caso de erro).
     entregaSaving=false;
+    // Uma nova entrega invalida o cache do Demonstrativo (novo momento de entrega).
+    try{ demoDeliveriesCache={}; }catch(_){}
     if(btn){ btn.disabled=false; btn.innerHTML=oldBtn; }
   }
 }
@@ -5917,20 +5919,45 @@ function toggleDemoSelection(key,checked){
   updateDemoSelectionUI();
 }
 
-/* ---- Entregas + evidencias ---- */
+/* ---- Entregas + evidencias (TODOS os momentos de entrega) ----
+   Busca em duas frentes e faz a uniao por id_entrega:
+   A) pelos campos grupo_* gravados no momento da entrega;
+   B) pelo vinculo real dos itens (ft_entrega_itens.item_id), que recupera os
+      momentos antigos mesmo se Mina/Equipamento/Data Parada forem editados
+      depois no Aprovisionamento (os campos grupo_* ficam congelados e deixam
+      de casar com o grupo atual, escondendo entregas anteriores). */
 async function fetchDemoDeliveries(g,force=false){
   if(!force && demoDeliveriesCache[g.key]) return demoDeliveriesCache[g.key];
   if(!navigator.onLine) throw new Error('offline');
-  /* Busca TODAS as entregas do grupo (paginado) - podem existir varios momentos de entrega */
-  const PAG=200; const entregas=[]; let de=0;
+  const porId=new Map();
+  const PAG=200;
+  /* A) por identificacao do grupo (paginado) */
+  let de=0;
   while(true){
     let q=sb.from(DELIVERY_TABLE_NAME).select('*').order('data_entrega',{ascending:true}).range(de,de+PAG-1);
     q=applyLogGroupFilter(q,g,'grupo_');
     const res=await q; if(res.error) throw res.error;
-    const bloco=res.data||[]; entregas.push(...bloco);
+    const bloco=res.data||[];
+    bloco.forEach(e=>porId.set(String(e.id_entrega),e));
     if(bloco.length<PAG) break;
     de+=PAG;
   }
+  /* B) por vinculo dos itens desta ordem */
+  const itemIds=(g.items||[]).map(r=>r.id).filter(v=>v!=null);
+  const faltantes=new Set();
+  for(let i=0;i<itemIds.length;i+=100){
+    const res=await sb.from(DELIVERY_ITEMS_TABLE_NAME).select('id_entrega').in('item_id',itemIds.slice(i,i+100));
+    if(res.error) throw res.error;
+    (res.data||[]).forEach(x=>{ if(x.id_entrega!=null && !porId.has(String(x.id_entrega))) faltantes.add(x.id_entrega); });
+  }
+  const extras=[...faltantes];
+  for(let i=0;i<extras.length;i+=100){
+    const res=await sb.from(DELIVERY_TABLE_NAME).select('*').in('id_entrega',extras.slice(i,i+100));
+    if(res.error) throw res.error;
+    (res.data||[]).forEach(e=>porId.set(String(e.id_entrega),e));
+  }
+  const entregas=[...porId.values()].sort((a,b)=>
+    (new Date(a.data_entrega||0)-new Date(b.data_entrega||0)) || (Number(a.id_entrega)-Number(b.id_entrega)));
   /* Itens de cada momento de entrega (em lotes, para nao estourar o filtro IN) */
   const ids=entregas.map(x=>x.id_entrega).filter(v=>v!=null);
   const itensPorEntrega={};
@@ -6027,7 +6054,7 @@ async function openDemoModal(idx){
   $('demoDeliveriesCount').textContent='—';
   $('demoOverlay').classList.add('show');
   try{
-    const pacote=await fetchDemoDeliveries(g);
+    const pacote=await fetchDemoDeliveries(g,true);   /* sempre releitura: novos momentos de entrega */
     if(demoCurrentGroup===g) renderDemoDeliveries(pacote);
   }catch(e){
     const offline=(e.message==='offline'||!navigator.onLine);
