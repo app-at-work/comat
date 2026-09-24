@@ -1310,29 +1310,31 @@
 
   <div class="perm-matrix-wrap">
     <div class="perm-matrix-head">
-      <h3>Matriz de perfis · permissões por tela</h3>
-      <small>Referência das permissões de acesso de cada perfil no COMAT.</small>
+      <h3>Matriz de perfis · permissões em cascata</h3>
+      <small>Adm &rsaquo; Aprovisionador &rsaquo; Separador &rsaquo; Preparador &rsaquo; Usuário. Cada perfil herda todas as permissões dos perfis à sua esquerda.</small>
     </div>
     <div style="overflow:auto">
       <table class="perm-matrix">
         <thead>
           <tr>
             <th>Recurso / Ação</th>
-            <th>Usuário</th>
-            <th>Aprovisionador</th>
-            <th>Separador</th>
-            <th>Preparador</th>
-            <th>Adm</th>
+            <th>Usuário<br><small style="font-weight:700;color:var(--muted)">nível 1</small></th>
+            <th>Preparador<br><small style="font-weight:700;color:var(--muted)">nível 2</small></th>
+            <th>Separador<br><small style="font-weight:700;color:var(--muted)">nível 3</small></th>
+            <th>Aprovisionador<br><small style="font-weight:700;color:var(--muted)">nível 4</small></th>
+            <th>Adm<br><small style="font-weight:700;color:var(--muted)">nível 5</small></th>
           </tr>
         </thead>
         <tbody>
           <tr><td>Ver Dashboard</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>Aprovisionamento (ver / importar / editar itens)</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
-          <tr><td>Separação (tratativa, liberar/retornar)</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td></tr>
-          <tr><td>Preparação (tratativa, preparar)</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>Entrega (registrar entrega)</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>Preparação (tratativa, liberar ordem)</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>Entrega (registrar entrega, foto e assinatura)</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
           <tr><td>Demonstrativo Ordem (consulta de entregas e evidências)</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>Separação (tratativa, liberar/retornar)</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>Aprovisionamento (ver / importar / excluir itens)</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>Compartilhamento de carteira</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
           <tr><td>Usuários (gerenciar perfis)</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
+          <tr><td>Tutorial (gerenciar vídeos)</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
         </tbody>
       </table>
     </div>
@@ -1527,7 +1529,7 @@
         <div class="field"><label>Status</label><label class="inline-check"><input id="userEditAtivo" type="checkbox" /> Usuário ativo</label></div>
       </div>
       <div class="perm-note">
-        Perfis: <b>Aprovisionador</b> importa/edita itens no Aprovisionamento e também acessa a Separação e a Preparação; <b>Separador</b> faz a Separação e libera para a Preparação; <b>Preparador</b> faz a Preparação e registra a Entrega; <b>Usuário</b> realiza a retirada; <b>Adm</b> gerencia usuários. Todos acessam o Dashboard.
+        Permissão em <b>cascata</b>: <b>Adm</b> &rsaquo; <b>Aprovisionador</b> &rsaquo; <b>Separador</b> &rsaquo; <b>Preparador</b> &rsaquo; <b>Usuário</b>. Cada perfil herda todas as permissões dos perfis abaixo dele. <b>Usuário</b> acessa o Dashboard e realiza a retirada; <b>Preparador</b> faz a Preparação, registra a Entrega e consulta o Demonstrativo; <b>Separador</b> acrescenta a Separação; <b>Aprovisionador</b> acrescenta o Aprovisionamento e o Compartilhamento de carteira; <b>Adm</b> acrescenta a gestão de Usuários e Tutoriais.
       </div>
     </div>
     <div class="modal-foot">
@@ -1914,20 +1916,38 @@ let authMode='login';
 let currentUser=null;
 let currentUserProfile=null;
 
+/* ===== PERMISSAO EM CASCATA =====
+   Adm > Aprovisionador > Separador > Preparador > Usuário
+   Cada nivel herda TODAS as permissoes dos niveis abaixo dele.
+   Fonte unica de verdade: ROLE_LEVEL / LEVEL. Nao usar listas fixas de perfil. */
+const ROLE_LEVEL = { 'Usuário':1, 'Usuario':1, 'Preparador':2, 'Separador':3, 'Aprovisionador':4, 'Adm':5 };
+const LEVEL = { USUARIO:1, PREPARADOR:2, SEPARADOR:3, APROVISIONADOR:4, ADM:5 };
+
 function getUserRole(){return currentUserProfile?.perfil || currentUserProfile?.Perfil || 'Usuário';}
-function isAdm(){return getUserRole()==='Adm';}
-function canAprovisionar(){return isAdm() || getUserRole()==='Aprovisionador';}
-function canSeparar(){const p=getUserRole();return isAdm() || p==='Separador' || p==='Aprovisionador';}
-function canPreparar(){const p=getUserRole();return isAdm() || p==='Preparador' || p==='Aprovisionador';}
+function getUserLevel(){return ROLE_LEVEL[getUserRole()] || LEVEL.USUARIO;}   // perfil desconhecido => Usuário
+function hasLevel(min){return getUserLevel() >= min;}
+
+function isAdm(){return hasLevel(LEVEL.ADM);}
+function canAprovisionar(){return hasLevel(LEVEL.APROVISIONADOR);}
+function canSeparar(){return hasLevel(LEVEL.SEPARADOR);}          // Aprovisionador e Adm herdam
+function canPreparar(){return hasLevel(LEVEL.PREPARADOR);}        // Separador, Aprovisionador e Adm herdam
+function canEntregar(){return hasLevel(LEVEL.PREPARADOR);}        // entrega acompanha a Preparacao
+function canVerDemonstrativo(){return hasLevel(LEVEL.PREPARADOR);}
+
+/* Nivel minimo exigido por tela */
+const VIEW_MIN_LEVEL = {
+  dash:     LEVEL.USUARIO,
+  prep:     LEVEL.PREPARADOR,
+  demo:     LEVEL.PREPARADOR,
+  sep:      LEVEL.SEPARADOR,
+  aprov:    LEVEL.APROVISIONADOR,
+  share:    LEVEL.APROVISIONADOR,
+  users:    LEVEL.ADM,
+  tutorial: LEVEL.ADM
+};
 function canAccessView(view){
-  if(view==='dash') return true;
-  if(view==='share') return canAprovisionar();
-  if(view==='users') return isAdm();
-  if(view==='tutorial') return isAdm();
-  if(view==='aprov') return canAprovisionar();
-  if(view==='sep') return canSeparar();
-  if(view==='prep') return canPreparar();
-  return false;
+  const min=VIEW_MIN_LEVEL[view];
+  return min==null ? false : hasLevel(min);
 }
 function applyPermissions(){
   document.querySelectorAll('[data-view]').forEach(btn=>{
@@ -1942,7 +1962,10 @@ function applyPermissions(){
   if(current && !canAccessView(current)) switchView('dash');
 }
 function ensurePermission(kind){
-  const ok = kind==='aprov'?canAprovisionar():kind==='sep'?canSeparar():kind==='prep'?canPreparar():kind==='admin'?isAdm():true;
+  /* Cascata: o nivel exigido e o MINIMO; niveis superiores sempre passam. */
+  const MIN = { aprov:LEVEL.APROVISIONADOR, sep:LEVEL.SEPARADOR, prep:LEVEL.PREPARADOR, entrega:LEVEL.PREPARADOR, demo:LEVEL.PREPARADOR, admin:LEVEL.ADM };
+  const min = MIN[kind];
+  const ok = (min==null) ? true : hasLevel(min);
   if(!ok) toast('Você não tem permissão para esta ação.', true);
   return ok;
 }
@@ -5773,7 +5796,8 @@ let demoSelected=new Set();
 let demoCurrentGroup=null;
 let demoDeliveriesCache={};   // { chaveGrupo: {entregas:[], itensPorEntrega:{}} }
 
-function canVerDemonstrativo(){const p=getUserRole();return isAdm()||p==='Aprovisionador'||p==='Separador'||p==='Preparador';}
+/* canVerDemonstrativo() e definida no bloco de permissao em cascata (nivel minimo: Preparador).
+   Duplicata removida para evitar divergencia de regras entre modulos. */
 
 /* ---- Base: somente ordens que ja tiveram entrega ---- */
 function getDemoGroups(){
