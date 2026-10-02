@@ -1846,12 +1846,107 @@ async function comatQueue(op){op={operacao_id:comatUuid(),criado_em:new Date().t
 function comatTemporaryId(){return -Math.floor(Date.now()+Math.random()*100000);}
 async function comatResolveTemp(value){if(typeof value==='number'&&value<0){const m=await comatStoreGet(COMAT_META_STORE,'temp:'+value);return m?.valor??value;}return value;}
 async function comatResolvePayload(payload){if(Array.isArray(payload))return Promise.all(payload.map(comatResolvePayload));if(payload&&typeof payload==='object'){const out={};for(const [k,v] of Object.entries(payload))out[k]=await comatResolveTemp(v);return out;}return comatResolveTemp(payload);}
-async function comatExecute(op){const payload=await comatResolvePayload(op.payload);let q;if(op.tipo==='insert'){q=sb.from(op.tabela).insert(payload);if(op.returnColumn)q=q.select(op.returnColumn).single();}else if(op.tipo==='update'){q=sb.from(op.tabela).update(payload);if(op.filtro?.eq)q=q.eq(op.filtro.eq.col,op.filtro.eq.value);if(op.filtro?.in)q=q.in(op.filtro.in.col,op.filtro.in.values);}else if(op.tipo==='delete'){q=sb.from(op.tabela).delete();if(op.filtro?.eq)q=q.eq(op.filtro.eq.col,op.filtro.eq.value);}else throw new Error('Operacao offline desconhecida');const res=await q;if(res.error){const oid=!Array.isArray(payload)&&payload?.operacao_offline_id;if(res.error.code==='23505'&&oid){const existing=await sb.from(op.tabela).select(op.returnColumn||'*').eq('operacao_offline_id',oid).maybeSingle();if(!existing.error){res.data=existing.data;res.error=null;}else throw res.error;}else throw res.error;}if(op.tempId&&op.returnColumn&&res.data?.[op.returnColumn]!=null)await comatStorePut(COMAT_META_STORE,{chave:'temp:'+op.tempId,valor:res.data[op.returnColumn]});return res;}
+async function comatExecute(op){const payload=await comatResolvePayload(op.payload);let q;if(op.tipo==='insert'){q=sb.from(op.tabela).insert(payload);if(op.returnColumn)q=q.select(op.returnColumn).single();}else if(op.tipo==='update'){q=sb.from(op.tabela).update(payload);if(op.filtro?.eq)q=q.eq(op.filtro.eq.col,op.filtro.eq.value);if(op.filtro?.in)q=q.in(op.filtro.in.col,op.filtro.in.values);}else if(op.tipo==='delete'){q=sb.from(op.tabela).delete();if(op.filtro?.eq)q=q.eq(op.filtro.eq.col,op.filtro.eq.value);}else throw new Error('Operacao offline desconhecida');const res=await q;if(res.error&&res.error.code==='23505'&&op.tipo==='insert'&&Array.isArray(payload)){const oids=payload.map(r=>r?.operacao_offline_id).filter(Boolean);if(oids.length===payload.length){let achados=0;for(let i=0;i<oids.length;i+=200){const chk=await sb.from(op.tabela).select('operacao_offline_id',{count:'exact',head:true}).in('operacao_offline_id',oids.slice(i,i+200));if(chk.error)break;achados+=chk.count||0;}if(achados===oids.length){res.error=null;}}}if(res.error){const oid=!Array.isArray(payload)&&payload?.operacao_offline_id;if(res.error.code==='23505'&&oid){const existing=await sb.from(op.tabela).select(op.returnColumn||'*').eq('operacao_offline_id',oid).maybeSingle();if(!existing.error){res.data=existing.data;res.error=null;}else throw res.error;}else throw res.error;}if(op.tempId&&op.returnColumn&&res.data?.[op.returnColumn]!=null)await comatStorePut(COMAT_META_STORE,{chave:'temp:'+op.tempId,valor:res.data[op.returnColumn]});return res;}
 async function comatMutate(op){if(navigator.onLine){try{const res=await comatExecute(op);return {...res,queued:false};}catch(e){console.warn('Supabase indisponivel; operacao preservada offline:',e.message);}}const queued=await comatQueue(op);let result=null;if(op.returnColumn){const tempId=comatTemporaryId();queued.tempId=tempId;await comatStorePut(COMAT_QUEUE_STORE,queued);result={[op.returnColumn]:tempId};}return{data:result,error:null,queued:true};}
 async function comatInsert(tabela,payload,returnColumn=null){return comatMutate({tabela,tipo:'insert',payload,returnColumn});}
 async function comatUpdate(tabela,payload,filtro){return comatMutate({tabela,tipo:'update',payload,filtro});}
 async function comatDelete(tabela,filtro){return comatMutate({tabela,tipo:'delete',filtro});}
-async function sincronizarPendencias(){if(comatSyncRunning||!navigator.onLine)return;comatSyncRunning=true;await comatConnectionStatus('sincronizando','');try{const ops=(await comatStoreAll(COMAT_QUEUE_STORE)).sort((a,b)=>String(a.criado_em).localeCompare(String(b.criado_em)));for(const op of ops){try{await comatExecute(op);await comatStoreDelete(COMAT_QUEUE_STORE,op.operacao_id);}catch(e){op.tentativas=(op.tentativas||0)+1;op.ultimo_erro=e.message;op.status='ERRO';await comatStorePut(COMAT_QUEUE_STORE,op);break;}}if(await comatPendingCount())await comatConnectionStatus('online · sincronizacao pendente','err');else{await comatConnectionStatus('online e sincronizado','ok');await load(true);}}finally{comatSyncRunning=false;}}
+/* ===== Importacao: lote com falha NAO fica represado na fila =====
+   - Erro de rede  -> a operacao continua na fila (offline-first).
+   - Erro de dados -> o lote inteiro e descartado: sai da fila, sai do cache local
+     e os blocos que ja tinham subido sao excluidos do servidor. */
+function comatIsNetworkError(e){
+  if(!navigator.onLine) return true;
+  const msg=String(e?.message||e||'').toLowerCase();
+  if(/failed to fetch|networkerror|network request failed|load failed|fetch failed|timeout|timed out|err_internet|err_network|aborted/.test(msg)) return true;
+  if(e?.code!=null && String(e.code).trim()!=='') return false;   // erro do Postgres/PostgREST (dados, constraint, RLS...)
+  return false;
+}
+function comatLoteDaOperacao(op){
+  if(!op) return null;
+  if(op.lote_importacao) return op.lote_importacao;
+  if(op.tabela===TABLE_NAME && op.tipo==='insert'){
+    const p=Array.isArray(op.payload)?op.payload:[op.payload];
+    const l=p.find(r=>r&&r.lote_importacao)?.lote_importacao;
+    if(l) return l;
+  }
+  if(op.tabela===TABLE_NAME && op.tipo==='delete' && op.filtro?.eq?.col==='lote_importacao') return null; // rollback: deve sincronizar normalmente
+  if(op.tabela===LOG_TABLE_NAME && op.payload?.acao==='IMPORTAR_ITENS') return op.payload?.detalhes?.lote_importacao||null;
+  return null;
+}
+async function comatRemoverLoteLocal(lote){
+  if(!lote) return;
+  const antes=data.length;
+  data=(data||[]).filter(r=>String(r.lote_importacao||'')!==String(lote));
+  viewData=(viewData||[]).filter(r=>String(r.lote_importacao||'')!==String(lote));
+  try{ await comatCacheSet(TABLE_NAME,data); }catch(_){}
+  if(data.length!==antes){ try{ comatRefreshAll(); }catch(_){} }
+}
+/* Exclui do servidor o que ja subiu do lote. Se nao conseguir (rede), agenda a exclusao na fila. */
+async function comatReverterLoteServidor(lote){
+  if(!lote) return true;
+  try{
+    const {error}=await sb.from(TABLE_NAME).delete().eq('lote_importacao',lote);
+    if(error) throw error;
+    return true;
+  }catch(e){
+    await comatStorePut(COMAT_QUEUE_STORE,{operacao_id:comatUuid(),criado_em:new Date().toISOString(),tentativas:0,status:'PENDENTE',tabela:TABLE_NAME,tipo:'delete',filtro:{eq:{col:'lote_importacao',value:lote}},origem:'rollback_importacao'});
+    console.warn('Rollback do lote agendado na fila:',lote,e.message);
+    return false;
+  }
+}
+/* Descarta TODAS as operacoes pendentes do lote (blocos de itens + log de importacao). Retorna os ids removidos. */
+async function comatDescartarLoteImportacao(lote,erro){
+  const removidos=new Set();
+  const fila=await comatStoreAll(COMAT_QUEUE_STORE);
+  for(const op of fila){
+    if(String(comatLoteDaOperacao(op)||'')===String(lote)){
+      await comatStoreDelete(COMAT_QUEUE_STORE,op.operacao_id);
+      removidos.add(op.operacao_id);
+    }
+  }
+  await comatRemoverLoteLocal(lote);
+  await comatReverterLoteServidor(lote);
+  try{ await logAction('IMPORTACAO_DESCARTADA','Aprovisionamento',{lote_importacao:lote,motivo:erro?.message||String(erro||''),codigo_erro:erro?.code||null,operacoes_descartadas:removidos.size}); }catch(_){}
+  return removidos;
+}
+async function sincronizarPendencias(){
+  if(comatSyncRunning||!navigator.onLine)return;
+  comatSyncRunning=true;
+  await comatConnectionStatus('sincronizando','');
+  const lotesDescartados=[];
+  try{
+    const ops=(await comatStoreAll(COMAT_QUEUE_STORE)).sort((a,b)=>String(a.criado_em).localeCompare(String(b.criado_em)));
+    const ignorar=new Set();
+    for(const op of ops){
+      if(ignorar.has(op.operacao_id)) continue;
+      try{
+        await comatExecute(op);
+        await comatStoreDelete(COMAT_QUEUE_STORE,op.operacao_id);
+      }catch(e){
+        const lote=comatLoteDaOperacao(op);
+        if(lote && !comatIsNetworkError(e)){
+          // Lote de importacao com erro de dados: descarta e segue com o restante da fila.
+          const ids=await comatDescartarLoteImportacao(lote,e);
+          ids.forEach(id=>ignorar.add(id));
+          lotesDescartados.push({lote,erro:e.message});
+          continue;
+        }
+        op.tentativas=(op.tentativas||0)+1;op.ultimo_erro=e.message;op.status='ERRO';
+        await comatStorePut(COMAT_QUEUE_STORE,op);
+        break;
+      }
+    }
+    if(await comatPendingCount())await comatConnectionStatus('online · sincronizacao pendente','err');
+    else{await comatConnectionStatus('online e sincronizado','ok');await load(true);}
+  }finally{
+    comatSyncRunning=false;
+    if(lotesDescartados.length){
+      const l=lotesDescartados.map(x=>x.lote).join(', ');
+      toast(`Importação com erro descartada (${l}). Corrija a planilha e importe novamente. Motivo: ${lotesDescartados[0].erro}`,true);
+    }
+  }
+}
 window.addEventListener('online',()=>{comatConnectionStatus('online','ok');sincronizarPendencias();});
 window.addEventListener('offline',()=>comatConnectionStatus('offline','err'));
 comatConnectionStatus(navigator.onLine?'online':'offline',navigator.onLine?'ok':'err');
@@ -3744,25 +3839,52 @@ async function confirmImport(){
   if(!importRows.length) return;
   if(!opLock('confirmImport')) return;
   const btn=$('confirmImportBtn'); const old=btn.innerHTML; btn.innerHTML='<span class="spinner"></span> Importando…'; btn.disabled=true;
-  $('prog').style.display='block';
+  $('prog').style.display='block'; $('progBar').style.width='0';
+  const CHUNK=200; let done=0, ok=0;
+  const loteCodigo=gerarCodigoLote();   // codigo unico do lote -> permite exclusao coletiva
+  const loteData=new Date().toISOString();
+  const online=navigator.onLine;
+  let blocoAtual='';
   try{
-    const CHUNK=200; let done=0, ok=0;
-    const loteCodigo=gerarCodigoLote();   // codigo unico do lote -> permite exclusao coletiva
-    const loteData=new Date().toISOString();
     for(let i=0;i<importRows.length;i+=CHUNK){
       const batch=importRows.slice(i,i+CHUNK);
+      blocoAtual=`linhas ${i+2} a ${i+1+batch.length}`; // +1 do cabecalho da planilha
       const u=getCurrentUserAudit();
-      const rowsToInsert=batch.map(r=>withDefaultsForNewItem({...r,lote_importacao:loteCodigo,usuario_importacao_id:u.id,usuario_importacao_nome:u.nome,usuario_importacao_email:u.email,data_importacao:loteData}));
-      const {error}=await comatInsert(TABLE_NAME,rowsToInsert.map(r=>({...r,operacao_offline_id:r.operacao_offline_id||comatUuid()})));
-      if(error) throw error;
+      const rowsToInsert=batch.map(r=>({...withDefaultsForNewItem({...r,lote_importacao:loteCodigo,usuario_importacao_id:u.id,usuario_importacao_nome:u.nome,usuario_importacao_email:u.email,data_importacao:loteData}),operacao_offline_id:comatUuid()}));
+      if(online){
+        // ONLINE: grava direto no servidor. Erro NAO vai para a fila de sincronizacao.
+        const {error}=await sb.from(TABLE_NAME).insert(rowsToInsert);
+        if(error) throw error;
+      }else{
+        // OFFLINE: enfileira; se falhar ao sincronizar, o lote inteiro e descartado automaticamente.
+        const op={tabela:TABLE_NAME,tipo:'insert',payload:rowsToInsert,lote_importacao:loteCodigo};
+        await comatQueue(op);
+      }
       ok+=batch.length; done+=batch.length;
       $('progBar').style.width=Math.round(done/importRows.length*100)+'%';
     }
     await logAction('IMPORTAR_ITENS','Aprovisionamento',{quantidade:ok,lote_importacao:loteCodigo});
-    toast(`${ok} registro(s) importado(s) no lote ${loteCodigo} ✔`);
+    toast(online?`${ok} registro(s) importado(s) no lote ${loteCodigo} ✔`:`Sem conexão: ${ok} registro(s) do lote ${loteCodigo} salvos offline e serão sincronizados ✔`);
     closeImport(); await load();
-  }catch(e){ $('importSummary').innerHTML='<span class="bad">Erro ao importar: '+esc(e.message)+'</span>'; toast('Erro ao importar: '+e.message,true); console.error(e); }
-  finally{ btn.innerHTML=old; btn.disabled=false; opRelease('confirmImport'); }
+  }catch(e){
+    console.error(e);
+    // Reverte o lote inteiro: nada fica represado nem pela metade.
+    const revertido=await comatReverterLoteServidor(loteCodigo);
+    await comatDescartarFilaDoLote(loteCodigo);
+    await comatRemoverLoteLocal(loteCodigo);
+    try{ await logAction('IMPORTACAO_DESCARTADA','Aprovisionamento',{lote_importacao:loteCodigo,bloco:blocoAtual,registros_enviados_antes_do_erro:ok,motivo:e.message||String(e),codigo_erro:e.code||null}); }catch(_){}
+    $('progBar').style.width='0'; $('prog').style.display='none';
+    $('importSummary').innerHTML=`<span class="bad">Erro ao importar (${esc(blocoAtual)}): ${esc(e.message||e)}</span>`+
+      `<br>A importação foi <b>cancelada por completo</b>${ok?` (${ok} registro(s) já enviados foram ${revertido?'excluídos':'agendados para exclusão'})`:''}. Nada ficou pendente de sincronização.`+
+      `<br>Corrija a planilha e clique em <b>Importar registros</b> novamente.`;
+    toast('Importação cancelada: '+(e.message||e),true);
+  }
+  finally{ btn.innerHTML=old; btn.disabled=false; opRelease('confirmImport'); comatConnectionStatus(navigator.onLine?'online':'offline',navigator.onLine?'ok':'err'); }
+}
+/* Remove da fila qualquer operacao pendente do lote (sem rollback no servidor). */
+async function comatDescartarFilaDoLote(lote){
+  const fila=await comatStoreAll(COMAT_QUEUE_STORE).catch(()=>[]);
+  for(const op of fila){ if(String(comatLoteDaOperacao(op)||'')===String(lote)) await comatStoreDelete(COMAT_QUEUE_STORE,op.operacao_id); }
 }
 
 
